@@ -98,7 +98,7 @@ const maxP=prices.length?Math.max(...prices):100000, minP=prices.length?Math.min
 // ===== 雲端同步設定 (多人/多裝置共用同一份標註) =====
 // 填入 Supabase 專案的 URL 與 anon public key 即開啟雲端同步;
 // 兩者留空 = 只存本機瀏覽器 (單機模式)。設定教學見 supabase_setup.sql / 上線教學。
-const CLOUD={url:"", key:""};
+const CLOUD={url:"https://hpqdvseqiaeiuxkutxrk.supabase.co", key:"sb_publishable_6uS7cJiDPsGXes5zZhUo2g_tXXkM_hZ"};
 const cloudOn=()=>!!(CLOUD.url&&CLOUD.key);
 const COMMUTE_DESTS=[];  // 通勤目的地清單,由 build.py 自動填入 (空 = 沒算通勤)
 const LS_FAV="rentalmap_fav", LS_NOTE="rentalmap_note", LS_POS="rentalmap_pos", LS_DIS="rentalmap_dis";
