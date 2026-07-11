@@ -1,13 +1,15 @@
 -- 租屋地圖・共用標註 資料表 (在 Supabase 專案的 SQL Editor 執行)
 create table if not exists annotations (
   listing_id text primary key,   -- 用物件原始連結當唯一鍵
-  fav        boolean default false,
+  fav        boolean default false,  -- ★ 喜歡
+  dis        boolean default false,  -- 👎 不喜歡
   note       text,
   lat        double precision,   -- 拖曳修正後的座標 (null = 用資料原始座標)
   lon        double precision,
   updated_at timestamptz default now()
 );
--- 若資料表已存在,補上位置欄位 (重複執行安全)
+-- 若資料表已存在,補上新欄位 (重複執行安全)
+alter table annotations add column if not exists dis boolean default false;
 alter table annotations add column if not exists lat double precision;
 alter table annotations add column if not exists lon double precision;
 alter table annotations enable row level security;

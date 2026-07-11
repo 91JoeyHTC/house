@@ -30,6 +30,8 @@
   .pop-btn{display:inline-block;margin-top:8px;background:#2d6cdf;color:#fff;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:12px}
   .fav-btn{display:inline-block;margin:8px 6px 0 0;border:1px solid #e0b400;background:#fff;color:#b58900;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer}
   .fav-btn.on{background:#ffd34d;color:#5a4600;border-color:#e0b400}
+  .dis-btn{display:inline-block;margin:8px 6px 0 0;border:1px solid #d0d0d0;background:#fff;color:#777;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer}
+  .dis-btn.on{background:#e8eaed;color:#3c4043;border-color:#bdc1c6}
   .note{width:100%;margin-top:8px;font-size:12px;border:1px solid #ddd;border-radius:6px;padding:6px;resize:vertical;font-family:inherit}
   .note-saved{font-size:11px;color:#27ae60;margin-top:2px;height:14px}
   #favActions{display:flex;gap:6px;margin-top:8px}
@@ -52,7 +54,8 @@
     <div class="grp"><h3>網站</h3><div id="siteFilters"></div></div>
     <div class="grp"><h3>地區</h3><div id="distFilters"></div></div>
     <div class="grp"><h3>條件</h3>
-      <label class="chk"><input type="checkbox" id="favOnly">&#9733; 只顯示已標註 (<span id="favCount">0</span>)</label>
+      <label class="chk"><input type="checkbox" id="favOnly">&#9733; 只顯示喜歡 (<span id="favCount">0</span>)</label>
+      <label class="chk"><input type="checkbox" id="hideDis">&#128078; 隱藏不喜歡 (<span id="disCount">0</span>)</label>
       <label class="chk"><input type="checkbox" id="eleOnly">只顯示有電梯</label>
       <label class="chk"><input type="checkbox" id="parkOnly">只顯示有車位</label>
       <div id="favActions">
@@ -98,14 +101,18 @@ const maxP=prices.length?Math.max(...prices):100000, minP=prices.length?Math.min
 const CLOUD={url:"", key:""};
 const cloudOn=()=>!!(CLOUD.url&&CLOUD.key);
 const COMMUTE_DESTS=[];  // 通勤目的地清單,由 build.py 自動填入 (空 = 沒算通勤)
-const LS_FAV="rentalmap_fav", LS_NOTE="rentalmap_note", LS_POS="rentalmap_pos";
+const LS_FAV="rentalmap_fav", LS_NOTE="rentalmap_note", LS_POS="rentalmap_pos", LS_DIS="rentalmap_dis";
 function load(k){try{return JSON.parse(localStorage.getItem(k))||{};}catch(e){return {};}}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-let favs=load(LS_FAV), notes=load(LS_NOTE), pos=load(LS_POS);
+let favs=load(LS_FAV), notes=load(LS_NOTE), pos=load(LS_POS), diss=load(LS_DIS);
 let editMode=false;
 function isFav(id){return !!favs[id];}
 function favTotal(){return Object.keys(favs).length;}
-function toggleFav(id){if(favs[id])delete favs[id];else favs[id]=1;save(LS_FAV,favs);cloudUpsert(id);}
+function isDis(id){return !!diss[id];}
+function disTotal(){return Object.keys(diss).length;}
+// 喜歡 / 不喜歡 互斥
+function toggleFav(id){if(favs[id])delete favs[id];else{favs[id]=1;delete diss[id];}save(LS_FAV,favs);save(LS_DIS,diss);cloudUpsert(id);}
+function toggleDis(id){if(diss[id])delete diss[id];else{diss[id]=1;delete favs[id];}save(LS_DIS,diss);save(LS_FAV,favs);cloudUpsert(id);}
 function setNote(id,t){if(t)notes[id]=t;else delete notes[id];save(LS_NOTE,notes);cloudUpsert(id);}
 // 位置修正: 以連結為 key,存下拖曳後的座標;重跑 build.py 更新資料時不會被清掉
 function coordOf(d){const p=pos[d._id];return p?[p.lat,p.lon]:[d.lat,d.lon];}
@@ -118,18 +125,18 @@ async function cloudUpsert(id){
   try{
     await fetch(CLOUD.url+"/rest/v1/annotations",{method:"POST",
       headers:cloudHeaders({"Prefer":"resolution=merge-duplicates"}),
-      body:JSON.stringify({listing_id:id,fav:isFav(id)?true:false,note:notes[id]||null,lat:pos[id]?pos[id].lat:null,lon:pos[id]?pos[id].lon:null,updated_at:new Date().toISOString()})});
+      body:JSON.stringify({listing_id:id,fav:isFav(id)?true:false,dis:isDis(id)?true:false,note:notes[id]||null,lat:pos[id]?pos[id].lat:null,lon:pos[id]?pos[id].lon:null,updated_at:new Date().toISOString()})});
   }catch(e){console.warn("cloud upsert failed",e);}
 }
 async function cloudLoad(){
   if(!cloudOn())return;
   try{
-    const r=await fetch(CLOUD.url+"/rest/v1/annotations?select=listing_id,fav,note,lat,lon",{headers:cloudHeaders()});
+    const r=await fetch(CLOUD.url+"/rest/v1/annotations?select=listing_id,fav,dis,note,lat,lon",{headers:cloudHeaders()});
     if(!r.ok)return;
     const rows=await r.json();
-    favs={};notes={};pos={};
-    rows.forEach(x=>{if(x.fav)favs[x.listing_id]=1;if(x.note)notes[x.listing_id]=x.note;if(x.lat!=null&&x.lon!=null)pos[x.listing_id]={lat:x.lat,lon:x.lon};});
-    save(LS_FAV,favs);save(LS_NOTE,notes);save(LS_POS,pos);
+    favs={};notes={};pos={};diss={};
+    rows.forEach(x=>{if(x.fav)favs[x.listing_id]=1;if(x.dis)diss[x.listing_id]=1;if(x.note)notes[x.listing_id]=x.note;if(x.lat!=null&&x.lon!=null)pos[x.listing_id]={lat:x.lat,lon:x.lon};});
+    save(LS_FAV,favs);save(LS_NOTE,notes);save(LS_POS,pos);save(LS_DIS,diss);
     markers.forEach(m=>{const c=coordOf(m._d);m.setLatLng(c);m.setIcon(icon(m._d));});
     refreshFavCount();apply();
   }catch(e){console.warn("cloud load failed",e);}
@@ -143,10 +150,13 @@ const cluster=L.markerClusterGroup({maxClusterRadius:45,spiderfyOnMaxZoom:true})
 map.addLayer(cluster);
 
 function icon(d){
-  const c=colors[d.網站]||"#555";
-  const star=isFav(d._id)?'<div style="position:absolute;top:-9px;right:-9px;font-size:14px;line-height:1;text-shadow:0 0 2px #fff,0 0 2px #fff">&#11088;</div>':"";
-  const ring=isFav(d._id)?"border:3px solid #ffca28":"border:2px solid #fff";
-  return L.divIcon({className:"",html:'<div style="position:relative;width:16px;height:16px"><div style="width:16px;height:16px;border-radius:50%;background:'+c+';'+ring+';box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>'+star+'</div>',iconSize:[16,16],iconAnchor:[8,8]});
+  const dis=isDis(d._id), fav=isFav(d._id);
+  const c=dis?"#9aa0a6":(colors[d.網站]||"#555");   // 不喜歡 -> 灰
+  const badge=fav?'<div style="position:absolute;top:-9px;right:-9px;font-size:14px;line-height:1;text-shadow:0 0 2px #fff,0 0 2px #fff">&#11088;</div>'
+              :dis?'<div style="position:absolute;top:-9px;right:-9px;font-size:12px;line-height:1;text-shadow:0 0 2px #fff,0 0 2px #fff">&#128078;</div>':"";
+  const ring=fav?"border:3px solid #ffca28":dis?"border:2px solid #cfcfcf":"border:2px solid #fff";
+  const op=dis?"opacity:.6;":"";
+  return L.divIcon({className:"",html:'<div style="position:relative;width:16px;height:16px;'+op+'"><div style="width:16px;height:16px;border-radius:50%;background:'+c+';'+ring+';box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>'+badge+'</div>',iconSize:[16,16],iconAnchor:[8,8]});
 }
 function esc(s){return (s==null?"":""+s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function popup(d){
@@ -158,7 +168,7 @@ function popup(d){
   if(d.車位)tags+="<span>車位</span>";
   const price=(+d.租金)?Number(d.租金).toLocaleString()+" 元/月":"";
   const link=d.連結?'<a class="pop-btn" href="'+esc(d.連結)+'" target="_blank" rel="noopener">查看原始物件 &rarr;</a>':"";
-  const on=isFav(d._id);
+  const on=isFav(d._id), dn=isDis(d._id);
   let commute="";
   if(d.通勤){COMMUTE_DESTS.forEach(name=>{const c=d.通勤[name];if(!c)return;
     const parts=[];if(c.drive!=null)parts.push("🚗"+c.drive);if(c.transit!=null)parts.push("🚇"+c.transit);if(c.cycle!=null)parts.push("🚲"+c.cycle);
@@ -168,7 +178,8 @@ function popup(d){
     +'<div style="color:#666;font-size:12px;margin:3px 0">'+esc(d.網站)+' &middot; '+esc(d.地址)+(hasPos(d._id)?' &middot; <span style="color:#e67e22">位置已修正</span>':'')+'</div>'
     +(commute?'<div style="margin:4px 0 2px">'+commute+'</div>':'')
     +'<div class="pop-tags">'+tags+'</div>'
-    +'<button class="fav-btn '+(on?'on':'')+'" data-fav="'+esc(d._id)+'">'+(on?'★ 已標註':'☆ 標註喜歡')+'</button>'+resetBtn+link
+    +'<button class="fav-btn '+(on?'on':'')+'" data-fav="'+esc(d._id)+'">'+(on?'★ 已標註':'☆ 標註喜歡')+'</button>'
+    +'<button class="dis-btn '+(dn?'on':'')+'" data-dis="'+esc(d._id)+'">'+(dn?'👎 已不喜歡':'👎 不喜歡')+'</button>'+resetBtn+link
     +'<textarea class="note" data-note="'+esc(d._id)+'" placeholder="備註(例如:格局好、屋主好聊、待約看)…">'+esc(notes[d._id]||"")+'</textarea>'
     +'<div class="note-saved" data-saved="'+esc(d._id)+'"></div>';
 }
@@ -177,7 +188,7 @@ const markers=DATA.map(d=>{const c=coordOf(d);const m=L.marker(c,{icon:icon(d),d
   return m;});
 function setEditMode(on){editMode=on;markers.forEach(m=>{m.options.draggable=on;if(m.dragging){on?m.dragging.enable():m.dragging.disable();}});document.body.classList.toggle("editing",on);}
 
-const state={sites:new Set(sites),dists:new Set(dists),ele:false,park:false,fav:false,priceMax:maxP,
+const state={sites:new Set(sites),dists:new Set(dists),ele:false,park:false,fav:false,hideDis:false,priceMax:maxP,
   commuteDest:COMMUTE_DESTS[0]||"",commuteMode:"min",commuteMax:999};
 // 通勤資料由 build.py 依 CONFIG 產生: d.通勤[目的地名][模式]=分鐘。mode="min" 取最短。
 function commuteOf(d){const c=d.通勤&&d.通勤[state.commuteDest];if(!c)return null;
@@ -198,6 +209,7 @@ function chk(container,items,onToggle,colored){
 chk(document.getElementById("siteFilters"),sites,(v,on)=>{on?state.sites.add(v):state.sites.delete(v);apply();},true);
 chk(document.getElementById("distFilters"),dists,(v,on)=>{on?state.dists.add(v):state.dists.delete(v);apply();},false);
 favOnly.onchange=()=>{state.fav=favOnly.checked;apply();};
+hideDis.onchange=()=>{state.hideDis=hideDis.checked;apply();};
 eleOnly.onchange=()=>{state.ele=eleOnly.checked;apply();};
 parkOnly.onchange=()=>{state.park=parkOnly.checked;apply();};
 priceMax.min=minP;priceMax.max=maxP;priceMax.value=maxP;priceVal.textContent=maxP.toLocaleString();
@@ -223,9 +235,12 @@ document.getElementById("editPos").onchange=e=>setEditMode(e.target.checked);
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-fav]");
   if(b){const id=b.getAttribute("data-fav");toggleFav(id);
-    const m=markers.find(mk=>mk._d._id===id);if(m)m.setIcon(icon(m._d));
-    b.classList.toggle("on",isFav(id));b.textContent=isFav(id)?"★ 已標註":"☆ 標註喜歡";
-    refreshFavCount();if(state.fav)apply();return;}
+    const m=markers.find(mk=>mk._d._id===id);if(m){m.setIcon(icon(m._d));m.setPopupContent(popup(m._d));}
+    refreshFavCount();apply();return;}
+  const db=e.target.closest("[data-dis]");
+  if(db){const id=db.getAttribute("data-dis");toggleDis(id);
+    const m=markers.find(mk=>mk._d._id===id);if(m){m.setIcon(icon(m._d));m.setPopupContent(popup(m._d));}
+    refreshFavCount();apply();return;}
   const rb=e.target.closest("[data-reset]");
   if(rb){const id=rb.getAttribute("data-reset");resetPos(id);
     const m=markers.find(mk=>mk._d._id===id);if(m){m.setLatLng(coordOf(m._d));m.setPopupContent(popup(m._d));}}
@@ -235,7 +250,7 @@ document.addEventListener("input",e=>{
   if(t){const id=t.getAttribute("data-note");setNote(id,t.value);
     const s=document.querySelector('[data-saved="'+CSS.escape(id)+'"]');if(s){s.textContent="已儲存 ✓";clearTimeout(s._t);s._t=setTimeout(()=>s.textContent="",1200);} }
 });
-document.getElementById("clearFav").onclick=()=>{if(confirm("確定清除全部標註與備註?")){favs={};notes={};save(LS_FAV,favs);save(LS_NOTE,notes);markers.forEach(m=>m.setIcon(icon(m._d)));refreshFavCount();apply();}};
+document.getElementById("clearFav").onclick=()=>{if(confirm("確定清除全部標註(喜歡/不喜歡)與備註?")){favs={};notes={};diss={};save(LS_FAV,favs);save(LS_NOTE,notes);save(LS_DIS,diss);markers.forEach(m=>m.setIcon(icon(m._d)));refreshFavCount();apply();}};
 document.getElementById("exportFav").onclick=()=>{
   const cols=["網站","地區","標題","租金","坪數","樓層","格局","地址","電梯","車位","備註","連結"];
   const rows=DATA.filter(d=>isFav(d._id)).map(d=>cols.map(c=>{
@@ -247,7 +262,7 @@ document.getElementById("exportFav").onclick=()=>{
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download="我的標註租屋.csv";a.click();
 };
-function refreshFavCount(){document.getElementById("favCount").textContent=favTotal();}
+function refreshFavCount(){document.getElementById("favCount").textContent=favTotal();document.getElementById("disCount").textContent=disTotal();}
 
 function apply(){
   cluster.clearLayers();let n=0;const per={};
@@ -255,6 +270,7 @@ function apply(){
     if(!state.sites.has(d.網站))return;
     if(!state.dists.has(d.地區))return;
     if(state.fav&&!isFav(d._id))return;
+    if(state.hideDis&&isDis(d._id))return;
     if(state.ele&&!d.電梯)return;
     if(state.park&&!d.車位)return;
     if((+d.租金)>state.priceMax)return;
